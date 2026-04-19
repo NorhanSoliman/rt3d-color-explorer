@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PW2 — Ex3: Lambertian Lighting</title>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.163.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.163.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #090810;
+      --panel:   rgba(11,10,20,0.90);
+      --border:  rgba(255,255,255,0.07);
+      --accent:  #e8a230;   /* warm amber — distinct from Ex1 purple, Ex2 teal */
+      --accent2: #c45cf5;
+      --text:    #ede8f5;
+      --muted:   #5a5570;
+      --font:    'IBM Plex Mono', monospace;
+    }
+
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&display=swap');
+
+    html, body {
+      width: 100%; height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      overflow: hidden;
+    }
+
+    #canvas-container { position: fixed; inset: 0; }
+    canvas { display: block; width: 100% !important; height: 100% !important; }
+
+    #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
+
+    /* ── Top-left ── */
+    #top-left {
+      position: absolute; top: 24px; left: 24px;
+      pointer-events: all;
+    }
+    .title    { font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+    .subtitle { font-size: 18px; font-weight: 500; color: var(--text); margin-bottom: 16px; }
+    .file-btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 7px 14px;
+      background: var(--panel); border: 1px solid var(--border); border-radius: 4px;
+      color: var(--muted); font-family: var(--font); font-size: 11px;
+      letter-spacing: 0.1em; cursor: pointer; transition: border-color 0.2s, color 0.2s;
+    }
+    .file-btn:hover { border-color: var(--accent); color: var(--text); }
+    #file-input { display: none; }
+
+    /* ── Stats bar ── */
+    #stats-bar {
+      position: absolute; top: 24px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 24px;
+      background: var(--panel); border: 1px solid var(--border); border-radius: 4px;
+      padding: 8px 20px; backdrop-filter: blur(8px); pointer-events: none;
+    }
+    .stat { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+    .stat-val { font-size: 14px; font-weight: 500; color: var(--text); }
+    .stat-lbl { font-size: 9px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--muted); }
+
+    /* ── XR buttons ── */
+    #xr-buttons {
+      position: absolute; top: 24px; right: 24px;
+      pointer-events: all; display: flex; gap: 8px;
+    }
+
+    /* ── Left panel: space + channel ── */
+    #left-panel {
+      position: absolute; bottom: 32px; left: 24px;
+      pointer-events: all; display: flex; flex-direction: column; gap: 20px;
+    }
+    .panel-section { display: flex; flex-direction: column; gap: 6px; }
+    .panel-label   { font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); }
+    .btn-grid      { display: flex; flex-direction: column; gap: 4px; }
+
+    .cs-btn, .ch-btn {
+      display: flex; align-items: center; gap: 10px;
+      padding: 7px 14px;
+      background: var(--panel); border: 1px solid var(--border); border-radius: 4px;
+      color: var(--muted); font-family: var(--font); font-size: 11px;
+      cursor: pointer; transition: all 0.15s; backdrop-filter: blur(8px); min-width: 150px;
+    }
+    .cs-btn:hover, .ch-btn:hover { border-color: rgba(232,162,48,0.4); color: var(--text); }
+    .cs-btn.active, .ch-btn.active {
+      border-color: var(--accent); color: var(--text); background: rgba(232,162,48,0.1);
+    }
+    .btn-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--muted); transition: background 0.15s; flex-shrink: 0;
+    }
+    .cs-btn.active .btn-dot, .ch-btn.active .btn-dot { background: var(--accent); }
+
+    /* ── Right panel: lighting + surface controls ── */
+    #right-panel {
+      position: absolute; bottom: 32px; right: 24px;
+      pointer-events: all; display: flex; flex-direction: column; gap: 18px; min-width: 200px;
+    }
+    .ctrl-group { display: flex; flex-direction: column; gap: 8px; }
+    .ctrl-label { font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); }
+
+    .range-row { display: flex; align-items: center; gap: 10px; }
+    .range-val { font-size: 11px; color: var(--text); width: 36px; text-align: right; }
+
+    input[type=range] {
+      -webkit-appearance: none; width: 100%; height: 2px;
+      background: var(--border); border-radius: 2px; outline: none; cursor: pointer;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 12px; height: 12px;
+      border-radius: 50%; background: var(--accent); border: 2px solid var(--bg);
+    }
+
+    .mode-toggle { display: flex; gap: 4px; }
+    .mode-btn {
+      flex: 1; padding: 7px 0;
+      background: var(--panel); border: 1px solid var(--border); border-radius: 4px;
+      color: var(--muted); font-family: var(--font); font-size: 10px; letter-spacing: 0.08em;
+      cursor: pointer; transition: all 0.15s; backdrop-filter: blur(8px);
+    }
+    .mode-btn:hover { color: var(--text); }
+    .mode-btn.active {
+      border-color: var(--accent2); color: var(--text); background: rgba(196,92,245,0.1);
+    }
+
+    /* Light direction visualiser — small compass */
+    #light-compass {
+      width: 72px; height: 72px;
+      border: 1px solid var(--border);
+      border-radius: 50%;
+      background: var(--panel);
+      position: relative; cursor: crosshair;
+      flex-shrink: 0; align-self: center;
+    }
+    #light-dot {
+      position: absolute;
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--accent);
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      box-shadow: 0 0 8px var(--accent);
+    }
+    .compass-row {
+      display: flex; align-items: center; gap: 12px;
+    }
+    .compass-labels {
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .compass-lbl { font-size: 9px; color: var(--muted); letter-spacing: 0.1em; }
+    .compass-val { font-size: 11px; color: var(--text); }
+
+    /* ── Loading ── */
+    #loading {
+      position: fixed; inset: 0; background: var(--bg);
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+      z-index: 100; transition: opacity 0.5s;
+    }
+    #loading.hidden { opacity: 0; pointer-events: none; }
+    .loading-text { font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); }
+    .loading-bar  { width: 200px; height: 1px; background: var(--border); border-radius: 1px; overflow: hidden; }
+    .loading-fill { height: 100%; background: var(--accent); animation: loadpulse 1.2s ease-in-out infinite; }
+    @keyframes loadpulse {
+      0%   { width: 0%;  margin-left: 0; }
+      50%  { width: 60%; margin-left: 20%; }
+      100% { width: 0%;  margin-left: 100%; }
+    }
+
+    /* divider */
+    .divider { width: 100%; height: 1px; background: var(--border); }
+  </style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="loading-text">Computing surface normals</div>
+  <div class="loading-bar"><div class="loading-fill"></div></div>
+</div>
+
+<div id="canvas-container"></div>
+
+<div id="hud">
+
+  <div id="top-left">
+    <div class="title">PW2 · Exercise 3</div>
+    <div class="subtitle">Lambertian Lighting</div>
+    <label class="file-btn">
+      <span>⊕</span> Load Image
+      <input type="file" id="file-input" accept="image/*" />
+    </label>
+  </div>
+
+  <div id="stats-bar">
+    <div class="stat">
+      <span class="stat-val" id="stat-res">—</span>
+      <span class="stat-lbl">Grid</span>
+    </div>
+    <div class="stat">
+      <span class="stat-val" id="stat-space">RGB</span>
+      <span class="stat-lbl">Space</span>
+    </div>
+    <div class="stat">
+      <span class="stat-val" id="stat-channel">R</span>
+      <span class="stat-lbl">Channel</span>
+    </div>
+    <div class="stat">
+      <span class="stat-val" id="stat-ndotl">—</span>
+      <span class="stat-lbl">N·L avg</span>
+    </div>
+  </div>
+
+  <div id="xr-buttons"></div>
+
+  <!-- Left: color space + channel (identical structure to Ex2) -->
+  <div id="left-panel">
+    <div class="panel-section">
+      <div class="panel-label">Color Space</div>
+      <div class="btn-grid" id="cs-buttons">
+        <button class="cs-btn active" data-space="0"><span class="btn-dot"></span>RGB</button>
+        <button class="cs-btn"        data-space="1"><span class="btn-dot"></span>HSV</button>
+        <button class="cs-btn"        data-space="2"><span class="btn-dot"></span>CIE XYZ</button>
+        <button class="cs-btn"        data-space="3"><span class="btn-dot"></span>CIE xyY</button>
+        <button class="cs-btn"        data-space="4"><span class="btn-dot"></span>CIELAB</button>
+        <button class="cs-btn"        data-space="5"><span class="btn-dot"></span>CIELCH</button>
+      </div>
+    </div>
+    <div class="panel-section">
+      <div class="panel-label">Height Channel</div>
+      <div class="btn-grid" id="ch-buttons"></div>
+    </div>
+  </div>
+
+  <!-- Right: lighting + surface controls -->
+  <div id="right-panel">
+
+    <div class="ctrl-group">
+      <div class="ctrl-label">Surface Mode</div>
+      <div class="mode-toggle">
+        <button class="mode-btn active" data-wire="0">Solid</button>
+        <button class="mode-btn"        data-wire="1">Wire</button>
+        <button class="mode-btn"        data-wire="2">Both</button>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Light direction compass -->
+    <div class="ctrl-group">
+      <div class="ctrl-label">Light Direction</div>
+      <div class="compass-row">
+        <div id="light-compass">
+          <div id="light-dot" style="left:50%;top:30%"></div>
+        </div>
+        <div class="compass-labels">
+          <span class="compass-lbl">Elevation</span>
+          <span class="compass-val" id="lbl-elev">60°</span>
+          <span class="compass-lbl" style="margin-top:6px">Azimuth</span>
+          <span class="compass-val" id="lbl-azim">45°</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Light color -->
+    <div class="ctrl-group">
+      <div class="ctrl-label">Light Color</div>
+      <div class="range-row" style="gap:8px">
+        <input type="color" id="light-color" value="#ffffff"
+          style="width:32px;height:24px;border:1px solid var(--border);background:none;cursor:pointer;border-radius:3px;padding:0" />
+        <span style="font-size:11px;color:var(--muted)">Id</span>
+      </div>
+    </div>
+
+    <!-- kd diffuse -->
+    <div class="ctrl-group">
+      <div class="ctrl-label">Diffuse kd</div>
+      <div class="range-row">
+        <input type="range" id="kd" min="0" max="1" step="0.05" value="0.9" />
+        <span class="range-val" id="kd-val">0.90</span>
+      </div>
+    </div>
+
+    <!-- Ambient -->
+    <div class="ctrl-group">
+      <div class="ctrl-label">Ambient ka</div>
+      <div class="range-row">
+        <input type="range" id="ka" min="0" max="0.5" step="0.02" value="0.12" />
+        <span class="range-val" id="ka-val">0.12</span>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Height scale -->
+    <div class="ctrl-group">
+      <div class="ctrl-label">Height Scale</div>
+      <div class="range-row">
+        <input type="range" id="height-scale" min="0.05" max="1.5" step="0.05" value="0.4" />
+        <span class="range-val" id="height-scale-val">0.40</span>
+      </div>
+    </div>
+
+    <!-- Grid resolution -->
+    <div class="ctrl-group">
+      <div class="ctrl-label">Grid Resolution</div>
+      <div class="range-row">
+        <input type="range" id="grid-res" min="32" max="256" step="16" value="128" />
+        <span class="range-val" id="grid-res-val">128</span>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<script type="module" src="main.js"></script>
+</body>
+</html>
