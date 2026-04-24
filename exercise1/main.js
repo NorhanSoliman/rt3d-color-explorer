@@ -79,6 +79,38 @@ ui.loadDefaultImage((imageData) => {
   ui.hideLoading();
 });
 
+// ─── After creating `cloud` and `ui` ─────────────────────────────
+let originalCloudPosition = new THREE.Vector3(0, 0, 0);
+let originalPointSize = 2.0;   // default from UI
+
+// ─── XR session events ──────────────────────────────────────────
+renderer.xr.addEventListener('sessionstart', () => {
+  xrPanel.visible = true;
+  controls.enabled = false;
+
+  // Move cloud 1.2 units in front of the camera (negative Z)
+  if (cloud.points) {
+    originalCloudPosition.copy(cloud.points.position);
+    cloud.points.position.set(0, 0, -1.2);
+  }
+
+  // Enlarge points for better visibility in VR
+  originalPointSize = cloud.material?.uniforms.uPointSize.value || 2;
+  cloud.setPointSize(6.0);
+});
+
+renderer.xr.addEventListener('sessionend', () => {
+  xrPanel.visible = false;
+  controls.enabled = true;
+
+  // Restore cloud position
+  if (cloud.points) {
+    cloud.points.position.copy(originalCloudPosition);
+  }
+
+  // Restore original point size
+  cloud.setPointSize(originalPointSize);
+});
 // ─────────────────────────────────────────────
 // WebXR — VR + MR buttons
 // ─────────────────────────────────────────────

@@ -81,6 +81,43 @@ ui.loadDefaultImage((imageData) => {
   ui.hideLoading();
 });
 
+
+// ─────────────────────────────────────────────
+// Make HeightField visible in VR/MR
+// ─────────────────────────────────────────────
+let originalHfPosition = new THREE.Vector3(0, 0, 0);
+
+// Override the existing 'sessionstart' listener (or merge with it)
+const originalSessionStart = renderer.xr._listeners?.sessionstart?.[0];
+renderer.xr.removeEventListener('sessionstart', originalSessionStart);
+renderer.xr.removeEventListener('sessionend', renderer.xr._listeners?.sessionend?.[0]);
+
+renderer.xr.addEventListener('sessionstart', () => {
+  xrPanel.visible  = true;
+  controls.enabled = false;
+  xrPanel.position.set(0, 1.4, -0.6);
+
+  // Move the height field in front of the camera
+  if (hf.mesh) {
+    originalHfPosition.copy(hf.mesh.position);
+    hf.mesh.position.set(0, -0.2, -1.2);   // y lowered a bit, z = -1.2 (in front)
+  }
+
+  // Optional: hide the reference grid to avoid visual clutter
+  grid.visible = false;
+});
+
+renderer.xr.addEventListener('sessionend', () => {
+  xrPanel.visible  = false;
+  controls.enabled = true;
+
+  // Restore original position
+  if (hf.mesh) {
+    hf.mesh.position.copy(originalHfPosition);
+  }
+
+  grid.visible = true;
+});
 // ─────────────────────────────────────────────
 // WebXR Buttons
 // ─────────────────────────────────────────────
